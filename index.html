@@ -96,7 +96,11 @@ button.primary{background:var(--brass);color:#2a2112;border-color:transparent}
 #win h2{font-size:2rem;color:var(--brass)}
 #win p{margin:0;color:var(--muted);font-variant-numeric:tabular-nums}
 #win .record{color:var(--text);font-size:.9rem;margin-bottom:8px}
-#howSheet{place-items:center}
+#howSheet,#newSheet{place-items:center}
+#newSheet .panel{border-radius:18px;max-width:340px;padding:24px}
+#newSheet p{margin:0;color:var(--muted);line-height:1.45;font-size:.92rem}
+#newSheet p:empty{display:none}
+.confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:6500}
 #howSheet .panel{border-radius:18px;max-width:340px;padding:24px}
 #howSheet p{margin:0;color:var(--muted);line-height:1.45;font-size:.92rem}
 .brand{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
@@ -163,7 +167,15 @@ body.busy #board{opacity:.55;transition:opacity .2s}
   </div>
 </div>
 <div id="win" class="sheet" hidden>
-  <div class="panel"><h2 id="winTitle">Solved</h2><p id="winStats"></p><p id="winRecord" class="record"></p><button id="againBtn" type="button" class="primary">Deal again</button></div>
+  <div class="panel"><h2 id="winTitle">Solved</h2><p id="winStats"></p><p id="winRecord" class="record"></p><button id="winNew" type="button" class="primary">New deal</button><button id="winReplay" type="button">Replay this deal</button></div>
+</div>
+<div id="newSheet" class="sheet" hidden role="dialog" aria-label="Start a game">
+  <div class="panel"><h2>Start over?</h2>
+    <p id="newNote"></p>
+    <button id="newRandom" type="button" class="primary">New deal</button>
+    <button id="newReplay" type="button">Replay this deal</button>
+    <button id="newCancel" type="button">Keep playing</button>
+  </div>
 </div>
 <div id="howSheet" class="sheet" hidden role="dialog" aria-label="Show a winning line">
   <div class="panel"><h2>Show me how?</h2>
@@ -487,7 +499,7 @@ function commit(fn){
   if(isWon()){S.won=true;stopFinish();stopReplay(true);
     if(!D.assisted&&!D.recorded){D.recorded=true;const st=ST();st.wins++;st.streak++;st.best=Math.max(st.best,st.streak);saveStats()}}
   saveGame();render();
-  if(S.won)setTimeout(showWin,700);
+  if(S.won)setTimeout(()=>showWin(true),700);
 }
 function moveCards(from,idx,to){
   if(!canDrop(from,idx,to))return false;
@@ -655,8 +667,9 @@ function render(o={}){
   $('#undoBtn').disabled=!hist.length;$('#finishBtn').hidden=!canFinish();
 }
 const fmt=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
-function showWin(){
+function showWin(celebrate){
   const st=ST();
+  if(celebrate&&!D.assisted)confetti();
   $('#winTitle').textContent=D.assisted?'That’s one way':'Solved';
   $('#winStats').textContent=D.assisted?`SoliTrio won this ${DEF[G].name} hand in ${S.moves} moves. It doesn’t count toward your wins.`:`${DEF[G].name} in ${S.moves} moves, ${fmt(S.secs)}`;
   $('#winRecord').textContent=`Wins ${st.wins} · Streak ${st.streak} · Best ${st.best}`;
@@ -762,13 +775,47 @@ function solveAsync(game,piles,o,budget){
 /* ---------- controls ---------- */
 $('#undoBtn').onclick=undo;
 $('#finishBtn').onclick=startFinish;
-$('#againBtn').onclick=deal;
+function replayDeal(){
+  if(dealing)return;if(!D.start){deal();return}
+  stopReplay();stopFinish();
+  S={game:G,p:JSON.parse(D.start),moves:0,secs:0,started:false,won:false,suits:S.suits};hist=[];
+  $('#win').hidden=true;saveGame();
+  els.forEach(e=>e.remove());els.clear();
+  render({deal:true});
+}
+$('#winNew').onclick=()=>{$('#win').hidden=true;deal()};
+$('#winReplay').onclick=()=>{$('#win').hidden=true;replayDeal()};
 $('#newBtn').onclick=()=>{
   if(dealing)return;
-  const b=$('#newBtn');
-  if(S.started&&!S.won&&Date.now()>armUntil){armUntil=Date.now()+3000;b.textContent='Tap to deal';setTimeout(()=>{b.textContent='New game'},3000);return}
-  armUntil=0;b.textContent='New game';deal();
+  const live=S.started&&!S.won&&!D.assisted&&ST().streak>0;
+  $('#newNote').textContent=D.recorded?'You’ve already won this deal, so replaying it won’t add to your wins.':live?`A new deal ends your ${ST().streak}-game streak. Replaying this deal keeps it going.`:'';
+  $('#newReplay').disabled=!D.start;
+  $('#newSheet').hidden=false;
 };
+$('#newRandom').onclick=()=>{$('#newSheet').hidden=true;deal()};
+$('#newReplay').onclick=()=>{$('#newSheet').hidden=true;replayDeal()};
+$('#newCancel').onclick=()=>{$('#newSheet').hidden=true};
+$('#newSheet').addEventListener('click',e=>{if(e.target.id==='newSheet')$('#newSheet').hidden=true});
+function confetti(){
+  if(reduceMotion)return;
+  const cv=document.createElement('canvas');cv.className='confetti';cv.setAttribute('aria-hidden','true');document.body.append(cv);
+  const dpr=Math.min(2,devicePixelRatio||1),W=innerWidth,H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;
+  const x=cv.getContext('2d');x.scale(dpr,dpr);
+  const cols=['#d8b26e','#b8322b','#fbfaf6','#5fae8c','#e9cf96','#6e1f2a'],ps=[];
+  for(let i=0;i<170;i++){const left=i%2===0,g=i%8===0?i/8%4|0:-1;
+    ps.push({x:left?-10:W+10,y:H*(.5+Math.random()*.35),vx:(left?1:-1)*(3+Math.random()*(W/90)),vy:-(7+Math.random()*(H/55)),
+      w:5+Math.random()*6,h:8+Math.random()*8,r:Math.random()*6,vr:(Math.random()-.5)*.3,ph:Math.random()*6,
+      c:g>=0?(g===1||g===2?'#b8322b':'#fbfaf6'):cols[i%cols.length],g})}
+  const t0=performance.now();
+  const fr=t=>{const e=t-t0;x.clearRect(0,0,W,H);x.globalAlpha=e>2700?Math.max(0,1-(e-2700)/800):1;
+    ps.forEach(p=>{p.vy=Math.min(p.vy+.26,4.2);p.vx*=.985;p.x+=p.vx+Math.sin(e/280+p.ph)*.7;p.y+=p.vy;p.r+=p.vr;
+      x.save();x.translate(p.x,p.y);x.rotate(p.r);x.fillStyle=p.c;
+      if(p.g>=0){x.font='22px Georgia,serif';x.textAlign='center';x.textBaseline='middle';x.fillText(SUIT[p.g],0,0)}
+      else{x.scale(1,Math.cos(e/110+p.ph));x.fillRect(-p.w/2,-p.h/2,p.w,p.h)}
+      x.restore()});
+    if(e<3500)requestAnimationFrame(fr);else cv.remove()};
+  requestAnimationFrame(fr);
+}
 function drawPicker(){
   $('#gameList').replaceChildren(...Object.keys(DEF).map(g=>{
     const b=document.createElement('button');b.type='button';b.className='game';b.setAttribute('aria-current',g===G);
