@@ -1,6 +1,6 @@
 {
-  "name": "Felt Table Solitaire",
-  "short_name": "Solitaire",
+  "name": "SoliTrio",
+  "short_name": "SoliTrio",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
